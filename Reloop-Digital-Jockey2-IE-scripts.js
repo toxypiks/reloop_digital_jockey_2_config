@@ -155,7 +155,7 @@ DigitalJockey2Controller.Cue = function (channel, control, value) {
         //TURN CUE LED OFF
         midi.sendShortMsg(0x90, control, DigitalJockey2Controller.ledOff);
         cue_pressed[channel - 1] = false;
-	play_pressed[channel - 1] = false;
+	    play_pressed[channel - 1] = false;
     }
 }
 DigitalJockey2Controller.CuePlayButton1 = function (channel, control, value) {
@@ -230,7 +230,11 @@ DigitalJockey2Controller.CupButton = function (channel, control, value) {
 		    engine.setValue("[Channel"+channel+"]","cue_default",0);
 		    engine.setValue("[Channel"+channel+"]","play",0);
         } else {
-            engine.setValue("[Channel"+channel+"]","cue_default",0);
+            // harter hack, cue funktioniert nur wenn track läuft,
+            // deshalb machen wir erst ein play dann cue
+            engine.setValue("[Channel"+channel+"]","play",1);
+            engine.setValue("[Channel"+channel+"]","cue_default",1);
+            // engine.setValue("[Channel"+channel+"]","cue_default",0);
         }
     } else {
         // loslassen teil:
@@ -247,7 +251,14 @@ DigitalJockey2Controller.CupButton = function (channel, control, value) {
 			else if(channel == 2){
 				midi.sendShortMsg(0x90, 0x55, DigitalJockey2Controller.ledOff);   // Turn on the Play LED off
 			}
-		}
+		} else {
+			if(channel == 1) {
+                midi.sendShortMsg(0x90, 0x17, DigitalJockey2Controller.ledOff);   // Turn on the CUP left LED off
+			}
+			else if(channel == 2){
+                midi.sendShortMsg(0x90, 0x53, DigitalJockey2Controller.ledOff);   // Turn on the CUP right LED off
+			}
+        }
 		//engine.setValue("[Channel"+channel+"]","cue_default",1);
 		//engine.setValue("[Channel"+channel+"]","cue_default",0);
 		engine.setValue("[Channel"+channel+"]","play",1);
