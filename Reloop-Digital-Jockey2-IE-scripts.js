@@ -28,21 +28,20 @@ DigitalJockey2Controller.init = function(id){
     //print ("Initalizing Reloop Digital Jockey 2 Interface Edition.");
     DigitalJockey2Controller.resetLEDs();
 
-        
     engine.connectControl("[Channel1]","play","DigitalJockey2Controller.isChannel1_Playing");
     engine.connectControl("[Channel2]","play","DigitalJockey2Controller.isChannel2_Playing");
-    
+
     engine.connectControl("[Channel1]","cue_default","DigitalJockey2Controller.isChannel1_Cue_Active");
     engine.connectControl("[Channel2]","cue_default","DigitalJockey2Controller.isChannel2_Cue_Active");
-    
+
     engine.connectControl("[Channel2]","filterHighKill","DigitalJockey2Controller.OnFilterHigh_KillButton2");
     engine.connectControl("[Channel2]","filterLowKill","DigitalJockey2Controller.OnFilterLow_KillButton2");
     engine.connectControl("[Channel2]","filterMidKill","DigitalJockey2Controller.OnFilterMid_KillButton2");
-    
+
     engine.connectControl("[Channel1]","filterHighKill","DigitalJockey2Controller.OnFilterHigh_KillButton1");
     engine.connectControl("[Channel1]","filterLowKill","DigitalJockey2Controller.OnFilterLow_KillButton1");
     engine.connectControl("[Channel1]","filterMidKill","DigitalJockey2Controller.OnFilterMid_KillButton1");
-    
+
     engine.connectControl("[Channel1]","pfl","DigitalJockey2Controller.OnPFL_Button1");
     engine.connectControl("[Channel2]","pfl","DigitalJockey2Controller.OnPFL_Button2");
     
@@ -504,19 +503,82 @@ DigitalJockey2Controller.PitchBend2Timer = 0;
 
 DigitalJockey2Controller.SearchSensitivity = 0.01;
 
+DigitalJockey2Controller.scratchEnable = [false, false];
+DigitalJockey2Controller.scratchTimer = [0, 0];
+DigitalJockey2Controller.isBraking = [false, false];
+
+DigitalJockey2Controller.toggleScratchEnable1 = function(ch, ctrl, value){
+    DigitalJockey2Controller.toggleScratchEnable(0, ctrl,value)
+}
+
+DigitalJockey2Controller.toggleScratchEnable2 = function(ch, ctrl, value){
+    DigitalJockey2Controller.toggleScratchEnable(1, ctrl,value)
+}
+
+DigitalJockey2Controller.toggleScratchEnable = function(ch, ctrl, value){
+    if(DigitalJockey2Controller.scratchEnable[ch] == false){
+        DigitalJockey2Controller.scratchEnable[ch] = true;
+        midi.sendShortMsg(0x90, ctrl, DigitalJockey2Controller.ledOn);
+    } else {
+        DigitalJockey2Controller.scratchEnable[ch] = false;
+        midi.sendShortMsg(0x90, ctrl, DigitalJockey2Controller.ledOff);
+    }
+}
+
+DigitalJockey2Controller.holdJogwheel1 = function(ch, midino, value, status, group){
+    DigitalJockey2Controller.holdJogwheel(0, midino, value, status, group);
+}
+DigitalJockey2Controller.holdJogwheel2 = function(ch, midino, value, status, group){
+    DigitalJockey2Controller.holdJogwheel(1, midino, value, status, group);
+}
+
+DigitalJockey2Controller.holdJogwheel = function(ch, midino, value, status, group) {
+    var deck = ch + 1;
+    if (value) {
+        if (VCI102.scratchTimer[ch]) {
+            engine.stopTimer(VCI102.scratchTimer[ch]);
+            VCI102.scratchTimer[ch] = 0;
+        } else if (VCI102.slipReady[ch]) {
+            if (VCI102.shift[ch % 2]) {
+                engine.brake(deck, true);
+                VCI102.isBraking[ch] = true;
+            } else {
+                engine.scratchEnable(deck, 2400, 100 / 3, 1 / 8, 1 / 256);
+            }
+            VCI102.slip(value, group);
+        }
+    } else if (engine.isScratching(deck)) {
+        VCI102.scratchTimer[ch] = engine.beginTimer(20, () => {
+            var vel = Math.abs(engine.getValue(group, "scratch2"));
+            if (vel < 1 && (vel < 1 / 64 || engine.getValue(group, "play"))) {
+                if (VCI102.scratchTimer[ch]) {
+                    engine.stopTimer(VCI102.scratchTimer[ch]);
+                    VCI102.scratchTimer[ch] = 0;
+                    engine.scratchDisable(
+                        deck, !engine.getValue(group, "slip_enabled"));
+                    VCI102.slip(value, group);
+                }
+            }
+        });
+    } else if (VCI102.isBraking[ch]) {
+        engine.brake(deck, false);
+        VCI102.isBraking[ch] = false;
+        VCI102.slip(value, group);
+    }
+};
+
+
 DigitalJockey2Controller.JogWheel = function (channel, control, value){
     /*
      * The JogWheels of the controler work as follows.
      * Spinning around in reverse order produces decimal values of 63 or lower
      * depending on the the speed you drag the wheel.
-     * 
+     *
      * Spinning around in a forward manner produces values of 65 or higher.
      */
     var jogValue = (value - 64); //DigitalJockey2Controller.WheelSensitivity;
-    
-    
-    
-    //Functionality of Jog Wheel if we're in scratch mode 
+
+    //Functionality of Jog Wheel if we're in scratch mode
     if(channel == 1){
         if (DigitalJockey2Controller.scratchModeChannel1 == true && DigitalJockey2Controller.searchModeChannel1 == true) {
             if (jogValue > 0) {
@@ -553,7 +615,7 @@ DigitalJockey2Controller.JogWheel = function (channel, control, value){
                 DigitalJockey2Controller.Scratch1Timer = engine.beginTimer(DigitalJockey2Controller.ScratchTimerResolution, "DigitalJockey2Controller.DisableScratching1()", true);
                 //print("Scratch1Timer started!");
             }
-            else
+            else //scratch enable == true
             {
                 engine.scratchTick(1,jogValue);
                 // Restart timer1
@@ -578,7 +640,7 @@ DigitalJockey2Controller.JogWheel = function (channel, control, value){
             }
             engine.setValue("[Channel1]", "playposition", playpos);
         }
-	else {
+	    else { // another channel (channel 2)
 	    engine.setValue("[Channel1]", "jog", 2*jogValue * jogValue * jogValue / 1024);
 	}
     }
@@ -649,19 +711,17 @@ DigitalJockey2Controller.JogWheel = function (channel, control, value){
     }
 }
 DigitalJockey2Controller.JogWheel1_Hold = function (channel, control, value){
-    
+
 }
 
 DigitalJockey2Controller.JogWheel2_Hold = function (channel, control, value){
-    
+    print("jogwheel2_hold");
 }
 
 DigitalJockey2Controller.JogWheel1_Helper = function (channel, control, value){
-    
 }
 
 DigitalJockey2Controller.JogWheel2_Helper = function (channel, control, value){
-    
 }
 /*****************************************************
  * Put functions here to handle controlobjets functions
